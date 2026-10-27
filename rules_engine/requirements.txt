@@ -1,0 +1,9 @@
+# Subsystem requirements for Member 3: Rules Engine, Confidence Scoring, and Review Router
+# Note: The rules engine core runs on standard library (Python 3.10+), but these
+# dependencies support upstream integration, linting, typing, and testing.
+
+pydantic>=2.7.0
+pytest>=8.0.0
+pytest-cov>=5.0.0
+ruff>=0.14.0
+mypy>=1.10.0
