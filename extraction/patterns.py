@@ -39,8 +39,9 @@ DATE_RE = re.compile(
     rf"|\b{_MON}\s+\d{{1,2}},?\s+(?:\d{{4}}|\d{{2}})\b",  # April 19, 2018
     re.I,
 )
-# Amounts with 2 decimals (1,234.50 / 9.90 / 12,50 / -0.01), currency prefix allowed before it.
-MONEY_RE = re.compile(r"(?<![\d.,])-?\s?(?:\d{1,3}(?:[,.]\d{3})+|\d+)[.,]\d{2}(?![\d])")
+# Amounts: 2 decimals (9.90 / 1,234.50 / 12,50 / -0.01) or thousands-grouped without
+# decimals (24,500 / 1.250.000, common for IDR, JPY and similar currencies).
+MONEY_RE = re.compile(r"(?<![\d.,])-?\s?(?:\d{1,3}(?:[,.]\d{3})+(?:[.,]\d{2})?|\d+[.,]\d{2})(?![\d])")
 PERCENT_RE = re.compile(r"\d{1,2}(?:\.\d+)?\s?%")
 CURRENCY_RE = re.compile(
     r"\b(?:MYR|USD|EUR|GBP|INR|SGD|IDR|AUD|JPY|CNY|THB|PHP|HKD|RM|RP)(?![A-Za-z])|US\$|S\$|[$€£₹¥]"

@@ -46,3 +46,11 @@ def test_aliases():
     assert canonical_key("Merchant") == "vendor"
     assert canonical_key("Invoice No") == "invoice_number"
     assert canonical_key("custom_field") == "custom_field"
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [("24,500", ["24,500"]), ("1.250.000", ["1.250.000"]), ("TEL 07-388 2218", []), ("ITEM:3", [])],
+)
+def test_grouped_amounts_without_decimals(text, expected):
+    assert find_amounts(text) == expected

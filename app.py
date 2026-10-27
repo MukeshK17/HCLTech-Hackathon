@@ -20,6 +20,7 @@ Features
 from __future__ import annotations
 
 import html
+import os
 import time
 import uuid
 
@@ -182,6 +183,13 @@ with st.sidebar:
             help="Auto-detect lets both branches classify the document.",
         )
         doc_type_override = None if doc_type_label == "Auto-detect" else doc_type_label
+        ocr_speed = st.radio(
+            "OCR model",
+            ["Accurate", "Fast"],
+            horizontal=True,
+            help="Fast uses PaddleOCR mobile models: about 2x quicker, slightly less accurate.",
+        )
+        os.environ["OCR_MODEL_SIZE"] = "mobile" if ocr_speed == "Fast" else "server"
         auto_run = st.toggle("Run automatically on upload", value=True)
 
     with st.expander("🎨 Display", expanded=False):
@@ -476,7 +484,7 @@ FIELD_ICON = {"auto_accept": "✅", "human_review": "👀", "retry_extraction": 
 
 
 @st.cache_resource(show_spinner="Loading models (first time only)...")
-def _warm_models(ocr_on: bool, vlm_on: bool) -> bool:
+def _warm_models(ocr_on: bool, vlm_on: bool, ocr_size: str) -> bool:
     """Load PaddleOCR / Qwen2-VL once per server process so each document only pays for inference."""
     from extraction import ai_extractor, ocr_engine
 
@@ -494,7 +502,7 @@ st.divider()
 st.markdown('<div class="section-title">🧠 Extraction & validation</div>', unsafe_allow_html=True)
 
 unique_docs = [(label, prepared, key) for label, prepared, key in results if label not in duplicates]
-options_key = f"ocr={use_ocr}|vlm={use_vlm}|type={doc_type_override}"
+options_key = f"ocr={use_ocr}:{ocr_speed}|vlm={use_vlm}|type={doc_type_override}"
 branches_on = use_ocr or use_vlm
 
 col_sel, col_run, col_all = st.columns([4, 1.3, 1.3])
@@ -521,7 +529,7 @@ def _run(label: str, prepared: PreparedDocument, key: str) -> None:
 
 if branches_on and (clicked_one or clicked_all or auto_run):
     try:
-        _warm_models(use_ocr, use_vlm)
+        _warm_models(use_ocr, use_vlm, os.environ["OCR_MODEL_SIZE"])
     except Exception as exc:  # missing optional model packages: branch reports its own error
         st.warning(f"Model preload failed ({type(exc).__name__}); the branch will report the error.")
 if clicked_one or (auto_run and branches_on and run_key not in st.session_state.pipeline_runs):

@@ -88,3 +88,28 @@ def test_doc_type_unknown_and_caller_hint():
 
 def test_delivery_note_classification():
     assert classify_document(lines("DELIVERY ORDER", "D/O NO 55", "RECEIVED BY").lines).value == "delivery_note"
+
+
+def test_idr_receipt_without_decimals_due_label_and_item_lines():
+    ocr = lines(
+        "HOMEWICEWICC",
+        "1 RB. COKLAT BAR",
+        "8,000",
+        "1 RB. CREPES TUNA",
+        "9,000",
+        "SUBTOTAL",
+        "24,500",
+        "DUE",
+        "24,500",
+        "CASH",
+        "50,000",
+        "CHANGE",
+        "25,500",
+    )
+    rec = map_fields(ocr).record()
+    assert rec["subtotal"] == "24,500" and rec["total"] == "24,500"  # not CASH 50,000
+    assert rec["vendor"] == "HOMEWICEWICC"  # item lines are never the vendor
+
+
+def test_due_date_is_not_a_total():
+    assert map_fields(lines("DUE DATE 12,500")).record()["total"] is None

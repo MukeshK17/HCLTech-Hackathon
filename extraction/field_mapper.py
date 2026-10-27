@@ -37,6 +37,7 @@ MONEY_LABELS: dict[str, list[Label]] = {
         (_rx(r"\bROUNDED\s*TOTAL\b"), 1.0),
         (_rx(r"\bTOTAL\s*(AMOUNT|AMT|DUE|PAYABLE)\b"), 1.0),
         (_rx(r"\bAMOUNT\s*DUE\b"), 0.95),
+        (_rx(r"^\s*(BALANCE\s*)?DUE\b(?!\s*DATE)"), 0.9),
         (_rx(r"\bNET+\s*(TOTAL|AMOUNT)\b"), 0.95),
         (_rx(r"\bTOTAL\b"), 0.85),
     ],
@@ -64,6 +65,7 @@ COMPANY_SUFFIX = _rx(
     r"\b(SDN\.?\s*BHD|BHD|LTD|LIMITED|LLC|INC|PLC|GMBH|PTE|CO\.|CORP\w*|ENTERPRISE|TRADING|RESTAURANT|STORE|MART|CAFE)\b"
 )
 VENDOR_SKIP = _rx(r"TAX\s*INVOICE|RECEIPT|INVOICE|\bTEL\b|PHONE|FAX|GST|\bREG\b|WELCOME|@|WWW|HTTP")
+ITEM_LINE = _rx(r"^\s*\d+\s*(X|PCS|RB\.?|@)?\s+[A-Z]")  # "1 RB. COKLAT BAR", "2 x COFFEE"
 ADDRESS_HINT = _rx(
     r"\b(JALAN|JLN|ROAD|RD|STREET|ST|TAMAN|LORONG|AVENUE|AVE|BLOCK|BLK|LOT|LEVEL|FLOOR|NO\.?\s*\d|\d{5,6})\b"
 )
@@ -184,7 +186,13 @@ def _vendor_address(lines: Sequence[OCRLine]) -> tuple[FieldResult, FieldResult]
     cands: list[tuple[int, Candidate]] = []
     for i, line in enumerate(lines[:8]):
         letters = sum(ch.isalpha() for ch in line.text)
-        if letters < 3 or letters < len(line.text) * 0.5 or VENDOR_SKIP.search(line.text) or find_dates(line.text):
+        if (
+            letters < 3
+            or letters < len(line.text) * 0.5
+            or VENDOR_SKIP.search(line.text)
+            or ITEM_LINE.search(line.text)
+            or find_dates(line.text)
+        ):
             continue
         bonus = (0.3 if COMPANY_SUFFIX.search(line.text) else 0.0) + (0.1 if not cands else 0.0)
         score = min(line.confidence * (0.5 + bonus), 0.9)

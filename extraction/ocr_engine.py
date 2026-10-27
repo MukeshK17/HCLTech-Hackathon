@@ -113,36 +113,36 @@ def parse_paddle_output(raw: Any) -> OCRResult:
     return result
 
 
-_ENGINE: Any = None
+_ENGINES: dict[str, Any] = {}
 
 
 def get_engine() -> Any:
-    """Create (once) a PaddleOCR instance. Model weights are cached by PaddleOCR
-    under the user's home directory on first use (no document data is cached)."""
-    global _ENGINE
-    if _ENGINE is None:
+    """Create (once per model size) a PaddleOCR instance. Model weights are cached by
+    PaddleOCR under the user's home directory (no document data is cached).
+
+    OCR_MODEL_SIZE: "server" (default, more accurate) or "mobile" (about 2x faster on CPU).
+    """
+    size = os.getenv("OCR_MODEL_SIZE", "server")
+    if size not in _ENGINES:
         from paddleocr import PaddleOCR  # optional heavy dependency
 
-        # "mobile" models are ~3x faster on CPU than the default server models.
-        fast = os.getenv("OCR_MODEL_SIZE", "mobile") == "mobile"
         models = (
             {
                 "text_detection_model_name": "PP-OCRv5_mobile_det",
                 "text_recognition_model_name": "en_PP-OCRv5_mobile_rec",
             }
-            if fast
-            else {}
+            if size == "mobile"
+            else {"lang": os.getenv("OCR_LANG", "en")}
         )
-        _ENGINE = PaddleOCR(
+        _ENGINES[size] = PaddleOCR(
             **models,
-            lang=None if fast else os.getenv("OCR_LANG", "en"),
             use_doc_orientation_classify=False,
             use_doc_unwarping=False,
             use_textline_orientation=False,
             # oneDNN crashes in paddlepaddle 3.3 (NotImplementedError ConvertPirAttribute...).
             enable_mkldnn=os.getenv("OCR_ENABLE_MKLDNN", "0") == "1",
         )
-    return _ENGINE
+    return _ENGINES[size]
 
 
 def run_ocr_pages(pages: list[Any], engine: Any = None) -> OCRResult:
