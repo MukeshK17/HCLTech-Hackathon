@@ -221,12 +221,40 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-uploaded_files = st.file_uploader(
-    "Upload document(s)",
-    type=["pdf", "png", "jpg", "jpeg"],
-    accept_multiple_files=True,
-    help="Supported: PDF, PNG, JPG/JPEG. Scans, photos and PDFs all work.",
-)
+st.session_state.setdefault("uploader_key", 0)
+col_upload, col_clear = st.columns([6, 1], vertical_alignment="center")
+with col_upload:
+    uploaded_files = st.file_uploader(
+        "Upload document(s)",
+        type=["pdf", "png", "jpg", "jpeg"],
+        accept_multiple_files=True,
+        help="Supported: PDF, PNG, JPG/JPEG. Scans, photos and PDFs all work.",
+        key=f"uploader_{st.session_state.uploader_key}",
+    )
+with col_clear:
+    if st.button("🧹 Clear all", width="stretch", help="Remove all uploads, results and review state"):
+        st.session_state.uploader_key += 1  # a new key gives an empty uploader
+        for key in (
+            "processed_cache",
+            "review_runs",
+            "timings",
+            "pipeline_runs",
+            "approved_records",
+            "document_ids",
+        ):
+            st.session_state[key] = {}
+        for key in (
+            "extraction_result",
+            "document_bytes",
+            "document_type",
+            "document_id",
+            "review_run_id",
+            "ocr_payloads",
+            "_docsense_review_states",
+        ):
+            st.session_state.pop(key, None)
+        st.cache_data.clear()
+        st.rerun()
 
 # ---------------------------------------------------------------------------
 # Session state
