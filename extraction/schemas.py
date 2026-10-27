@@ -21,7 +21,27 @@ ConfidenceMethod = Literal[
     "none",  # no value found -> confidence 0.0
 ]
 
-DOCUMENT_TYPES = ("receipt", "invoice", "delivery_note", "form")
+# Receipts, bills and tax invoices are one type ("invoice"): same fields, same checks.
+DOCUMENT_TYPES = ("invoice", "delivery_note", "form")
+DOCUMENT_TYPE_ALIASES = {
+    "receipt": "invoice",
+    "tax_invoice": "invoice",
+    "bill": "invoice",
+    "cash_bill": "invoice",
+    "receipt_invoice": "invoice",
+    "delivery_order": "delivery_note",
+}
+
+
+def normalize_document_type(value: str | None) -> str | None:
+    """Map any type label to one of DOCUMENT_TYPES, or None if unknown."""
+    if not value:
+        return None
+    key = "_".join(value.strip().lower().replace("/", " ").replace("-", " ").split())
+    key = DOCUMENT_TYPE_ALIASES.get(key, key)
+    return key if key in DOCUMENT_TYPES else None
+
+
 CANONICAL_FIELDS = (
     "document_type",
     "vendor",

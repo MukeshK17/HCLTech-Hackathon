@@ -64,7 +64,7 @@ Every value is a string, or `null` when it is absent. Converting values (ISO dat
 `document_type, vendor, address, invoice_number, order_number, date, currency, subtotal, tax_rate, tax, rounding_adjustment, total`
 
 - A missing value is always `null`, with confidence `0.0`.
-- `document_type` is a label we assign (`receipt | invoice | delivery_note | form`), not text copied from the document.
+- `document_type` is a label we assign (`invoice | delivery_note | form`; receipts, bills and tax invoices are all `invoice`), not text copied from the document.
 - Field-name aliases such as `company` or `merchant` → `vendor` are listed in `patterns.ALIASES`.
 
 **Error codes:** `invalid_input`, `ocr_unavailable`, `ocr_failed`, `vlm_unavailable`, `vlm_failed`, `vlm_invalid_response`.
@@ -124,7 +124,7 @@ A VLM is used **only** in `extraction/ai_extractor.py`; the OCR branch uses no l
 
 Limitations: a 2B model can misread small or faint text and sometimes returns malformed JSON. Treat its output as one opinion for Member 3 to compare with OCR.
 
-**Document type with no labels:** both branches classify every document themselves, OCR by keywords and the VLM as part of its answer, giving `receipt | invoice | delivery_note | form`, or `null` with a warning when unsure. A label from Member 1, when available, overrides both.
+**Document type with no labels:** both branches classify every document themselves, OCR by keywords and the VLM as part of its answer, giving `invoice` (receipts, bills and tax invoices) `| delivery_note | form`, or `null` with a warning when unsure. A label from Member 1, when available, overrides both.
 
 ## 6. Data lifecycle
 

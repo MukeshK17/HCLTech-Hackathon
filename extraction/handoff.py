@@ -19,7 +19,7 @@ from .schemas import ExtractionResult
 
 # Our field name -> rules_engine canonical field name (only where they differ).
 RULES_ENGINE_NAMES = {"vendor": "vendor_name", "tax": "tax_amount", "total": "total_amount"}
-KNOWN_DOCUMENT_TYPES = {"receipt", "invoice", "delivery_note"}
+KNOWN_DOCUMENT_TYPES = {"invoice", "delivery_note"}  # receipts are "invoice"
 
 
 def _values(result: ExtractionResult | None) -> dict[str, str] | None:

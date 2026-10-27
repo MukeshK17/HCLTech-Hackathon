@@ -185,10 +185,12 @@ with st.sidebar:
         )
         doc_type_label = st.selectbox(
             "Document type",
-            ["Auto-detect", "receipt", "invoice", "delivery_note", "form"],
+            ["Auto-detect", "Receipt / Invoice", "Delivery note", "Form"],
             help="Auto-detect lets both branches classify the document.",
         )
-        doc_type_override = None if doc_type_label == "Auto-detect" else doc_type_label
+        doc_type_override = {"Receipt / Invoice": "invoice", "Delivery note": "delivery_note", "Form": "form"}.get(
+            doc_type_label
+        )
         ocr_speed = st.radio(
             "OCR model",
             ["Accurate", "Fast"],
@@ -585,7 +587,8 @@ else:
 
     # ---- Decision banner ---------------------------------------------------
     # ---- Document type (classifier) -----------------------------------------
-    DOC_ICON = {"receipt": "🧾", "invoice": "📑", "delivery_note": "🚚", "form": "📝"}
+    DOC_ICON = {"invoice": "🧾", "delivery_note": "🚚", "form": "📝"}
+    DOC_LABEL = {"invoice": "Receipt / Invoice", "delivery_note": "Delivery Note", "form": "Form"}
 
     def _type_of(branch):
         if branch is None or not branch.ok:
@@ -611,7 +614,7 @@ else:
     ]
     st.markdown(
         f'<div class="doctype"><span class="doctype-main">{DOC_ICON.get(final_t or "", "❓")} '
-        f"{html.escape((final_t or 'unknown type').replace('_', ' ').title())}</span>"
+        f"{html.escape(DOC_LABEL.get(final_t or '', 'Unknown type'))}</span>"
         f'<span class="doctype-note">{html.escape(source_note)}</span>'
         f'<div class="doctype-detail">{" · ".join(parts)}</div></div>',
         unsafe_allow_html=True,

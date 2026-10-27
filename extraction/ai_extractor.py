@@ -23,11 +23,11 @@ from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
 from .patterns import canonical_key
 from .schemas import (
     CANONICAL_FIELDS,
-    DOCUMENT_TYPES,
     ExtractionResult,
     FieldResult,
     empty_fields,
     failed_result,
+    normalize_document_type,
 )
 
 log = logging.getLogger(__name__)
@@ -39,7 +39,8 @@ EMPTY_VALUES = {"", "null", "none", "n/a", "unknown"}
 PROMPT = f"""Read this business document image. Return ONLY a JSON object with exactly these keys:
 {", ".join(CANONICAL_FIELDS)}.
 Rules:
-- document_type is one of: {", ".join(DOCUMENT_TYPES)} (or null if unclear).
+- document_type is one of: invoice (use this for receipts, bills and tax invoices too), delivery_note, form
+  (or null if unclear).
 - vendor is the full company name that issued the document; address is the vendor's address.
 - date is the document date.
 - total is the final bill amount (TOTAL / GRAND TOTAL / AMOUNT DUE), NOT the cash given or change.
@@ -180,10 +181,12 @@ def parse_vlm_output(data: Any, model: str, output: VLMOutput | None = None) -> 
         if value is None or value.lower() in EMPTY_VALUES:
             fr.warnings.append("not_found")
             continue
-        if name == "document_type" and value.lower() not in DOCUMENT_TYPES:
-            fr.warnings.append("unsupported_value")
-            continue
-        fr.value = value.lower() if name == "document_type" else value
+        if name == "document_type":
+            value = normalize_document_type(value)
+            if value is None:
+                fr.warnings.append("unsupported_value")
+                continue
+        fr.value = value
         conf = value_confidence(output, key, value) if output else None
         if conf is None:
             fr.confidence, fr.confidence_method = FALLBACK_CONFIDENCE, "vlm_fallback_heuristic"
@@ -232,9 +235,12 @@ def extract_with_vlm(
     result.warnings = doc.warnings + result.warnings
     if len(doc.pages) > 1:
         result.warnings.append("vlm_first_page_only")
-    if document_type and result.ok:
+    if document_type and result.ok and normalize_document_type(document_type):
         result.fields["document_type"] = FieldResult(
-            source="vlm", value=document_type, confidence=1.0, confidence_method="caller_provided"
+            source="vlm",
+            value=normalize_document_type(document_type),
+            confidence=1.0,
+            confidence_method="caller_provided",
         )
     log.info("vlm finished: %d fields with values", sum(f.value is not None for f in result.fields.values()))
     return result

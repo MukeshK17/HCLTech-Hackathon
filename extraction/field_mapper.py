@@ -19,7 +19,7 @@ from collections.abc import Sequence
 
 from .ocr_engine import ENGINE_NAME, OCRLine, OCRResult
 from .patterns import MONEY_RE, PERCENT_RE, find_amounts, find_currencies, find_dates
-from .schemas import Candidate, Evidence, ExtractionResult, FieldResult, empty_fields
+from .schemas import Candidate, Evidence, ExtractionResult, FieldResult, empty_fields, normalize_document_type
 
 LOW_OCR_CONFIDENCE = 0.5
 AMBIGUITY_RATIO = 0.8
@@ -74,8 +74,16 @@ ADDRESS_STOP = _rx(r"\bTEL\b|PHONE|FAX|GST|EMAIL|INVOICE|RECEIPT|DATE|CASHIER")
 ADDRESS_SKIP = _rx(r"\b(ROC|CO\.?\s*(REG\w*|NO)|COMPANY\s*(REG\w*|NO)|REG\w*\s*NO)\b|\(\d{3,}-[A-Z]\)")
 DOC_TYPE_KEYWORDS: dict[str, list[re.Pattern[str]]] = {
     "delivery_note": [_rx(r"DELIVERY\s*(NOTE|ORDER)"), _rx(r"\bD/?O\s*NO\b"), _rx(r"RECEIVED\s*BY")],
-    "invoice": [_rx(r"\bINVOICE\b"), _rx(r"BILL\s*TO"), _rx(r"DUE\s*DATE")],
-    "receipt": [_rx(r"\bRECEIPT\b"), _rx(r"\bCASH\b"), _rx(r"\bCHANGE\b"), _rx(r"THANK\s*YOU")],
+    "invoice": [  # receipts and invoices are one type
+        _rx(r"\bINVOICE\b"),
+        _rx(r"BILL\s*TO"),
+        _rx(r"DUE\s*DATE"),
+        _rx(r"\bRECEIPT\b"),
+        _rx(r"\bCASH\b"),
+        _rx(r"\bCHANGE\b"),
+        _rx(r"THANK\s*YOU"),
+        _rx(r"\bTOTAL\b"),
+    ],
     "form": [_rx(r"\bFORM\b"), _rx(r"SIGNATURE"), _rx(r"\bNAME\s*:")],
 }
 
@@ -285,9 +293,12 @@ def map_fields(ocr: OCRResult, *, document_type: str | None = None) -> Extractio
         result.warnings.append("low_ocr_confidence_lines_present")
 
     fields: dict[str, FieldResult] = {}
-    if document_type:
+    if document_type and normalize_document_type(document_type):
         fields["document_type"] = FieldResult(
-            source="ocr", value=document_type, confidence=1.0, confidence_method="caller_provided"
+            source="ocr",
+            value=normalize_document_type(document_type),
+            confidence=1.0,
+            confidence_method="caller_provided",
         )
     else:
         fields["document_type"] = classify_document(lines)

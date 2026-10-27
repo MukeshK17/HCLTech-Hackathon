@@ -8,7 +8,7 @@ from .conftest import lines
 def test_receipt_fields_verbatim(receipt):
     res = map_fields(receipt)
     assert res.record() == {
-        "document_type": "receipt",
+        "document_type": "invoice",
         "vendor": "BREWERY TAP SDN BHD",
         "address": "12, JALAN TAMPOI 7/4, 81200 JOHOR BAHRU, JOHOR",
         "invoice_number": None,
@@ -123,3 +123,12 @@ def test_vendor_split_over_two_lines_is_joined():
 def test_evidence_keeps_ocr_reading_score():
     f = map_fields(lines(("TOTAL 9.90", 0.97))).fields["total"]
     assert f.evidence.ocr_score == 0.97 and f.confidence < 0.97
+
+
+def test_receipts_and_invoices_are_one_type():
+    from extraction.schemas import normalize_document_type
+
+    assert classify_document(lines("RECEIPT", "CASH 10.00", "CHANGE 0.00").lines).value == "invoice"
+    assert classify_document(lines("TAX INVOICE", "BILL TO: X").lines).value == "invoice"
+    assert normalize_document_type("Receipt") == normalize_document_type("tax invoice") == "invoice"
+    assert normalize_document_type("passport") is None

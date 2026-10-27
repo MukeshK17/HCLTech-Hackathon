@@ -13,7 +13,7 @@ def test_names_renamed_values_unchanged(receipt):
     assert kw["ocr_json"]["total_amount"] == "189.75" and kw["ocr_json"]["date"] == "30/03/2018"
     assert kw["ai_json"] == {"vendor_name": "BREWERY TAP", "total_amount": "189.75"}
     assert set(kw["ocr_confidence"]) == set(kw["ocr_json"])
-    assert kw["document_type"] == "receipt"
+    assert kw["document_type"] == "invoice"
 
 
 def test_failed_branch_is_none_and_engine_accepts_it(receipt):

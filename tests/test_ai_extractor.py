@@ -8,7 +8,7 @@ from extraction.ai_extractor import VLMOutput, extract_json, extract_with_vlm, p
 from .conftest import PNG_BYTES, FakeEngine
 
 VALID = {
-    "document_type": "receipt",
+    "document_type": "invoice",
     "vendor": "BREWERY TAP",
     "address": None,
     "invoice_number": None,
