@@ -69,7 +69,18 @@ Every value is a string, or `null` when it is absent. Converting values (ISO dat
 
 **Error codes:** `invalid_input`, `ocr_unavailable`, `ocr_failed`, `vlm_not_configured`, `vlm_timeout`, `vlm_api_error`, `vlm_refused`, `vlm_invalid_response`.
 
-**What Member 3 should do with this:** compare `ocr.record()` with `vlm.record()`, and use `fields[*].confidence`, `warnings` and `errors` when routing.
+**Handing results to Member 3** (`rules_engine/`):
+
+```python
+from extraction import extract_both
+from extraction.handoff import to_rules_engine_inputs
+from rules_engine import process_extraction
+
+results = extract_both(image)
+decision = process_extraction(**to_rules_engine_inputs(results["ocr"], results["vlm"]))
+```
+
+`to_rules_engine_inputs` only renames fields to the rules engine's names (`vendor` → `vendor_name`, `tax` → `tax_amount`, `total` → `total_amount`). Values are passed exactly as printed; the rules engine converts dates and amounts itself. A failed branch is passed as `None`. VLM confidence isn't passed, because `process_extraction` only takes OCR confidence.
 
 ## 3. Confidence
 
