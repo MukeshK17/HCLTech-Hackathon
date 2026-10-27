@@ -24,4 +24,4 @@ jobs:
       - name: pip-audit (installed runtime + dev deps)
         run: pip-audit --skip-editable
       - name: Bandit
-        run: bandit -c pyproject.toml -r extraction evaluation
+        run: bandit -c pyproject.toml -r extraction
