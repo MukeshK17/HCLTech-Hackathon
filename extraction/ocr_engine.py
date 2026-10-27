@@ -123,8 +123,19 @@ def get_engine() -> Any:
     if _ENGINE is None:
         from paddleocr import PaddleOCR  # optional heavy dependency
 
+        # "mobile" models are ~3x faster on CPU than the default server models.
+        fast = os.getenv("OCR_MODEL_SIZE", "mobile") == "mobile"
+        models = (
+            {
+                "text_detection_model_name": "PP-OCRv5_mobile_det",
+                "text_recognition_model_name": "en_PP-OCRv5_mobile_rec",
+            }
+            if fast
+            else {}
+        )
         _ENGINE = PaddleOCR(
-            lang=os.getenv("OCR_LANG", "en"),
+            **models,
+            lang=None if fast else os.getenv("OCR_LANG", "en"),
             use_doc_orientation_classify=False,
             use_doc_unwarping=False,
             use_textline_orientation=False,

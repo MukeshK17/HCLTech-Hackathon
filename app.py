@@ -182,6 +182,7 @@ with st.sidebar:
             help="Auto-detect lets both branches classify the document.",
         )
         doc_type_override = None if doc_type_label == "Auto-detect" else doc_type_label
+        auto_run = st.toggle("Run automatically on upload", value=True)
 
     with st.expander("🎨 Display", expanded=False):
         show_boxes = st.checkbox("Draw OCR evidence boxes on the image", value=True)
@@ -229,20 +230,7 @@ extraction_result = st.session_state.get("extraction_result") or {"fields": {}}
 has_fields = bool(extraction_result.get("fields"))
 
 
-def render_stepper(uploaded: bool, processed: bool) -> None:
-    steps = [
-        ("Step 1", "Upload", "done" if uploaded else "active"),
-        ("Step 2", "Preprocess", "done" if processed else ("active" if uploaded else "")),
-        ("Step 3", "OCR + extract", "done" if has_fields else ""),
-        ("Step 4", "Validate", "done" if has_fields else ""),
-        ("Step 5", "Human review", "active" if has_fields else ""),
-    ]
-    boxes = "".join(f'<div class="step {state}"><b>{html.escape(a)}</b>{html.escape(b)}</div>' for a, b, state in steps)
-    st.markdown(f'<div class="steps">{boxes}</div>', unsafe_allow_html=True)
-
-
 if not uploaded_files:
-    render_stepper(uploaded=False, processed=False)
     st.info("👆 Upload a document to get started.")
     st.stop()
 
@@ -290,7 +278,6 @@ for idx, uf in enumerate(uploaded_files):
     except Exception as exc:  # unexpected: never crash the whole page
         rejected.append((uf.name, f"Unexpected error while processing ({exc})."))
 
-render_stepper(uploaded=True, processed=bool(results))
 
 if rejected:
     with st.expander(f"⛔ {len(rejected)} file(s) rejected", expanded=True):
@@ -476,7 +463,8 @@ import json  # noqa: E402
 from PIL import ImageDraw  # noqa: E402
 
 from extraction.inputs import load_document  # noqa: E402
-from pipeline import export_record, published_fields, revalidate, review_rows, run_pipeline  # noqa: E402
+from pipeline import export_record, published_fields, review_rows, run_pipeline  # noqa: E402
+from review import render_review  # noqa: E402
 
 DECISION_STYLE = {
     "auto_accepted": ("ok", "✅ Auto-accepted", "All checks passed with high confidence."),
@@ -485,6 +473,19 @@ DECISION_STYLE = {
     "rejected": ("bad", "⛔ Rejected", "The document failed critical checks."),
 }
 FIELD_ICON = {"auto_accept": "✅", "human_review": "👀", "retry_extraction": "🔁", "reject": "⛔", "info": "ℹ️"}
+
+
+@st.cache_resource(show_spinner="Loading models (first time only)...")
+def _warm_models(ocr_on: bool, vlm_on: bool) -> bool:
+    """Load PaddleOCR / Qwen2-VL once per server process so each document only pays for inference."""
+    from extraction import ai_extractor, ocr_engine
+
+    if ocr_on:
+        ocr_engine.get_engine()
+    if vlm_on:
+        ai_extractor.get_engine()
+    return True
+
 
 st.session_state.setdefault("pipeline_runs", {})
 st.session_state.setdefault("approved_records", {})
@@ -518,14 +519,17 @@ def _run(label: str, prepared: PreparedDocument, key: str) -> None:
         status.update(label=f"{label}: {run.decision.replace('_', ' ')}", state="complete")
 
 
-if clicked_one:
+if branches_on and (clicked_one or clicked_all or auto_run):
+    try:
+        _warm_models(use_ocr, use_vlm)
+    except Exception as exc:  # missing optional model packages: branch reports its own error
+        st.warning(f"Model preload failed ({type(exc).__name__}); the branch will report the error.")
+if clicked_one or (auto_run and branches_on and run_key not in st.session_state.pipeline_runs):
     _run(sel_label, sel_doc, sel_key)
 if clicked_all:
     for label, prepared, key in unique_docs:
         if f"{key}|{options_key}" not in st.session_state.pipeline_runs:
             _run(label, prepared, key)
-if clicked_one or clicked_all:
-    st.rerun()  # refresh the step tracker at the top
 
 run = st.session_state.pipeline_runs.get(run_key)
 document_id = st.session_state.review_runs[sel_key]["document_id"]
@@ -724,65 +728,23 @@ else:
         st.json(raw, expanded=False)
 
     # -----------------------------------------------------------------------
-    # Human review
+    # Human review (Member 4): edit, re-validate, approve, save and export
     # -----------------------------------------------------------------------
     st.divider()
     st.markdown('<div class="section-title">👁️ Human review</div>', unsafe_allow_html=True)
-    approved = st.session_state.approved_records.get(document_id)
-    if approved:
-        st.success(f"Approved. Final decision: **{approved['decision']}**.")
-
-    rules_field_names = set(rules["fields"])
-    only_flagged = st.toggle("Show only fields that need review", value=bool(review_needed))
-    edit_rows = [r for r in rows if r["field"] in rules_field_names and (not only_flagged or r in review_needed)]
-    if not edit_rows:
-        st.caption("Nothing needs review.")
-    else:
-        edit_df = pd.DataFrame(
-            [
-                {
-                    "Field": r["field"],
-                    "Status": FIELD_ICON.get(r["decision"], "•") + " " + r["decision"].replace("_", " "),
-                    "OCR": r["ocr_value"] or "",
-                    "VLM": r["vlm_value"] or "",
-                    "Value": "" if r["value"] is None else str(r["value"]),
-                }
-                for r in edit_rows
-            ]
-        )
-        edited = st.data_editor(
-            edit_df,
-            hide_index=True,
-            disabled=["Field", "Status", "OCR", "VLM"],
-            column_config={"Value": st.column_config.TextColumn("Value (edit to correct)", width="large")},
-            key=f"editor_{run_key}",
-            width="stretch",
-        )
-        corrections = {
-            row["Field"]: row["Value"]
-            for (_, row), r in zip(edited.iterrows(), edit_rows, strict=True)
-            if row["Value"] != ("" if r["value"] is None else str(r["value"])) and row["Value"].strip()
-        }
-        b1, b2, b3 = st.columns(3)
-        if b1.button(f"🔁 Re-validate {len(corrections)} correction(s)", disabled=not corrections, width="stretch"):
-            revalidate(run, corrections)
-            st.toast("Corrections re-validated by the rules engine", icon="🔁")
-            st.rerun()
-        if b2.button("✅ Approve document", type="primary", width="stretch"):
-            st.session_state.approved_records[document_id] = export_record(run)
-            st.toast("Document approved", icon="✅")
-            st.rerun()
-        if approved:
-            b3.download_button(
-                "⬇️ Approved record",
-                json.dumps(approved, indent=2, default=str),
-                f"{document_id}_approved.json",
-                "application/json",
-                width="stretch",
-            )
-        if run.corrections:
-            st.caption("Corrected so far: " + ", ".join(sorted(run.corrections)))
-    st.caption("Review state lives in this browser session only; nothing is saved to disk.")
+    render_review(
+        run.rules,
+        document_bytes=sel_doc.original_bytes,
+        document_type=(
+            "application/pdf"
+            if sel_doc.is_pdf
+            else ("image/jpeg" if sel_doc.extension in {".jpg", ".jpeg"} else "image/png")
+        ),
+        document_id=document_id,
+        review_run_id=st.session_state.review_runs[sel_key]["review_run_id"],
+        authorized_export=True,
+        show_header=False,
+    )
 
 # ---------------------------------------------------------------------------
 # Integration contract (for teammates)

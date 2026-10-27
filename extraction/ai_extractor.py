@@ -72,11 +72,11 @@ class QwenEngine:
         self._torch = torch
         dtype = getattr(torch, os.getenv("VLM_DTYPE", "bfloat16"))
         device = os.getenv("VLM_DEVICE") or ("cuda" if torch.cuda.is_available() else "cpu")
-        max_pixels = int(os.getenv("VLM_MAX_PIXELS", str(768 * 28 * 28)))  # caps image tokens (~768)
+        max_pixels = int(os.getenv("VLM_MAX_PIXELS", str(448 * 28 * 28)))  # caps image tokens (~768)
         self.model = Qwen2VLForConditionalGeneration.from_pretrained(self.name, torch_dtype=dtype).to(device).eval()
-        self.processor = AutoProcessor.from_pretrained(self.name, min_pixels=256 * 28 * 28, max_pixels=max_pixels)
+        self.processor = AutoProcessor.from_pretrained(self.name, min_pixels=128 * 28 * 28, max_pixels=max_pixels)
         self.device = device
-        self.max_new_tokens = int(os.getenv("VLM_MAX_NEW_TOKENS", "384"))
+        self.max_new_tokens = int(os.getenv("VLM_MAX_NEW_TOKENS", "256"))
 
     def generate(self, image: Any, prompt: str) -> VLMOutput:
         torch = self._torch
