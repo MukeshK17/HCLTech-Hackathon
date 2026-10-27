@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Datasets, real documents and generated artifacts (never commit)
+data/
+datasets/
+samples/
+*.jpg
+*.jpeg
+*.png
+*.pdf
+*.tif
+*.tiff
+reports/
+tmp/
