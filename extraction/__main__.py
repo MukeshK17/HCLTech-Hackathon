@@ -33,12 +33,12 @@ def iter_files(inputs: list[str]) -> Iterator[Path]:
 
 
 def run_one(path: Path, branch: str, include_raw_text: bool = False) -> dict[str, Any]:
-    """Run the chosen branch(es) on one file. PDFs skip OCR (Member 1 rasterizes them)."""
+    """Run the chosen branch(es) on one file. PDFs are skipped (Member 1 converts them to images)."""
     out: dict[str, Any] = {"file": str(path)}
     branches = ["ocr", "vlm"] if branch == "both" else [branch]
     for b in branches:
-        if b == "ocr" and path.suffix.lower() == ".pdf":
-            out[b] = {"errors": [{"code": "invalid_input", "message": "OCR branch needs an image, not a PDF"}]}
+        if path.suffix.lower() == ".pdf":
+            out[b] = {"errors": [{"code": "invalid_input", "message": "needs an image, not a PDF"}]}
             continue
         res = (extract_with_ocr if b == "ocr" else extract_with_vlm)(path)
         d = res.to_json_dict()

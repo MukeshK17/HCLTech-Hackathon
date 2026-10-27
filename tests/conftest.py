@@ -1,13 +1,23 @@
 from __future__ import annotations
 
-from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
 from extraction.ocr_engine import OCRLine, OCRResult
 
-PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32  # magic bytes only; never decoded in tests
+
+def _png() -> bytes:
+    import io
+
+    from PIL import Image
+
+    buf = io.BytesIO()
+    Image.new("RGB", (8, 8), "white").save(buf, format="PNG")
+    return buf.getvalue()
+
+
+PNG_BYTES = _png()  # tiny blank synthetic image
 
 
 def lines(*rows: str | tuple[str, float] | tuple[str, float, list[float]]) -> OCRResult:
@@ -52,16 +62,20 @@ class FakeOCREngine:
         return self.raw
 
 
-class FakeClient:
-    """Mimics anthropic.Anthropic().messages.parse (structured outputs)."""
+class FakeEngine:
+    """Stands in for the local Qwen2-VL model in tests."""
 
-    def __init__(self, parsed: Any = None, exc: Exception | None = None, stop_reason: str = "end_turn") -> None:
-        self.calls: list[dict[str, Any]] = []
-        self._parsed, self._exc, self._stop = parsed, exc, stop_reason
-        self.messages = SimpleNamespace(parse=self._parse)
+    name = "fake-vlm"
 
-    def _parse(self, **kwargs: Any) -> Any:
-        self.calls.append(kwargs)
-        if self._exc:
-            raise self._exc
-        return SimpleNamespace(parsed_output=self._parsed, stop_reason=self._stop)
+    def __init__(self, text: str = "", exc: Exception | None = None, probs: bool = True) -> None:
+        self.text, self.exc, self.probs = text, exc, probs
+        self.calls = 0
+
+    def generate(self, image: Any, prompt: str) -> Any:
+        from extraction.ai_extractor import VLMOutput
+
+        self.calls += 1
+        if self.exc:
+            raise self.exc
+        spans = [(i, i + 1, 0.9) for i in range(len(self.text))] if self.probs else []
+        return VLMOutput(text=self.text, token_spans=spans)

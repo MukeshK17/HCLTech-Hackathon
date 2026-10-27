@@ -15,7 +15,7 @@ SCHEMA_VERSION = "1.0"
 Source = Literal["ocr", "vlm"]
 ConfidenceMethod = Literal[
     "ocr_heuristic",  # OCR recognition score x label/position/ambiguity factors
-    "model_self_report",  # VLM's own estimate, NOT a calibrated probability
+    "token_probability",  # VLM: geometric mean of the model's token probabilities for the value
     "vlm_fallback_heuristic",  # VLM gave no usable confidence; conservative default
     "caller_provided",  # value supplied by the caller (e.g. known document type)
     "none",  # no value found -> confidence 0.0
@@ -60,8 +60,8 @@ class FieldResult(BaseModel):
 
 
 class ExtractionError(BaseModel):
-    code: str  # invalid_input | ocr_unavailable | ocr_failed | vlm_not_configured | vlm_timeout
-    message: str  #  | vlm_api_error | vlm_refused | vlm_invalid_response
+    code: str  # invalid_input | ocr_unavailable | ocr_failed | vlm_unavailable | vlm_failed | vlm_invalid_response
+    message: str
 
 
 class ExtractionResult(BaseModel):

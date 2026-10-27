@@ -24,11 +24,10 @@ def test_bulk_folder_outputs_one_line_per_file(tmp_path, monkeypatch, capsys):
 def test_single_file_pretty_json(tmp_path, monkeypatch, capsys):
     img = tmp_path / "a.png"
     img.write_bytes(PNG_BYTES)
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    monkeypatch.setattr("dotenv.load_dotenv", lambda *a, **k: None)  # never read a real .env key in tests
+    monkeypatch.setattr(cli, "extract_with_vlm", lambda p: failed_result("vlm", "m", "vlm_unavailable", "x"))
     rc = cli.main([str(img), "--branch", "vlm"])
     out = json.loads(capsys.readouterr().out)
-    assert out["vlm"]["errors"][0]["code"] == "vlm_not_configured" and rc == 1
+    assert out["vlm"]["errors"][0]["code"] == "vlm_unavailable" and rc == 1
 
 
 def test_no_files(tmp_path, capsys):

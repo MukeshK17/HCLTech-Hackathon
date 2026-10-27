@@ -1,121 +1,104 @@
-import anthropic
-import httpx2 as httpx
+import json
+
 import pytest
 
-from extraction.ai_extractor import VLMResponse, extract_with_vlm, parse_vlm_output
+import extraction.ai_extractor as ai
+from extraction.ai_extractor import VLMOutput, extract_json, extract_with_vlm, parse_vlm_output, value_confidence
 
-from .conftest import PNG_BYTES, FakeClient
-
-
-def f(value, confidence=0.9, evidence="ev"):
-    return {"value": value, "confidence": confidence, "evidence": evidence}
-
+from .conftest import PNG_BYTES, FakeEngine
 
 VALID = {
-    "document_type": f("receipt"),
-    "vendor": f("BREWERY TAP"),
-    "address": f(None, None, None),
-    "invoice_number": f(None, None, None),
-    "order_number": f("11649"),
-    "date": f("30/03/2018"),
-    "currency": f("RM"),
-    "subtotal": f("179.00"),
-    "tax_rate": f("6%"),
-    "tax": f("10.74"),
-    "rounding_adjustment": f("0.01"),
-    "total": f("189.75", 0.95, "TOTAL MYR 189.75"),
+    "document_type": "receipt",
+    "vendor": "BREWERY TAP",
+    "address": None,
+    "invoice_number": None,
+    "order_number": "11649",
+    "date": "30/03/2018",
+    "currency": "RM",
+    "subtotal": "179.00",
+    "tax_rate": "6%",
+    "tax": "10.74",
+    "rounding_adjustment": "0.01",
+    "total": "189.75",
 }
 
 
-def test_valid_response_values_verbatim():
-    client = FakeClient(VLMResponse.model_validate(VALID))
-    res = extract_with_vlm(PNG_BYTES, client=client)
-    assert res.ok and res.source == "vlm"
-    rec = res.record()
-    assert rec["date"] == "30/03/2018" and rec["currency"] == "RM" and rec["tax_rate"] == "6%"
-    assert rec["total"] == "189.75" and rec["address"] is None
+def test_valid_output_values_verbatim_with_token_confidence():
+    eng = FakeEngine("```json\n" + json.dumps(VALID) + "\n```")
+    res = extract_with_vlm(PNG_BYTES, engine=eng)
+    assert res.ok and res.source == "vlm" and res.engine == "fake-vlm"
+    assert res.record() == VALID
     t = res.fields["total"]
-    assert t.confidence == 0.95 and t.confidence_method == "model_self_report"
-    assert t.evidence.text == "TOTAL MYR 189.75" and t.evidence.bbox is None
-    call = client.calls[0]
-    assert call["output_format"] is VLMResponse
-    assert call["messages"][0]["content"][0]["source"]["media_type"] == "image/png"
+    assert t.confidence == 0.9 and t.confidence_method == "token_probability"
+    assert res.fields["address"].confidence == 0.0
 
 
-def test_pdf_sent_as_document_block():
-    client = FakeClient(VLMResponse.model_validate(VALID))
-    assert extract_with_vlm(b"%PDF-1.7 fake", client=client).ok
-    assert client.calls[0]["messages"][0]["content"][0]["type"] == "document"
+def test_value_confidence_uses_only_that_values_tokens():
+    text = '{"vendor": "ACME", "total": "9.90"}'
+    pos = text.index("9.90")
+    spans = [(i, i + 1, 0.5 if pos <= i < pos + 4 else 0.99) for i in range(len(text))]
+    out = VLMOutput(text=text, token_spans=spans)
+    assert value_confidence(out, "total", "9.90") == 0.5
+    assert value_confidence(out, "vendor", "ACME") == 0.99
+    assert value_confidence(VLMOutput(text=text), "total", "9.90") is None
 
 
-def test_missing_keys():
-    res = parse_vlm_output({"vendor": f("X"), "total": f("5.00")}, "m")
-    assert res.fields["invoice_number"].value is None
-    assert "missing_in_response" in res.fields["invoice_number"].warnings
+def test_no_probabilities_falls_back():
+    res = extract_with_vlm(PNG_BYTES, engine=FakeEngine(json.dumps({"total": "5.00"}), probs=False))
+    t = res.fields["total"]
+    assert t.confidence_method == "vlm_fallback_heuristic" and "missing_confidence" in t.warnings
 
 
-def test_missing_confidence_uses_fallback():
-    t = parse_vlm_output({"total": {"value": "5.00", "evidence": "TOTAL 5.00"}}, "m").fields["total"]
-    assert t.confidence_method == "vlm_fallback_heuristic" and t.confidence == 0.5
-    assert "missing_confidence" in t.warnings
-    bad = parse_vlm_output({"total": f("5.00", confidence=7)}, "m").fields["total"]
-    assert "invalid_confidence" in bad.warnings and bad.confidence <= 0.5
-
-
-def test_unexpected_types_and_values():
+def test_missing_keys_and_bad_types():
     res = parse_vlm_output(
-        {
-            "vendor": f(["a", "b"]),
-            "subtotal": 12.5,  # bare number instead of an object
-            "total": f("null"),
-            "document_type": f("passport"),
-            "company_reg": f("123"),
-        },
-        "m",
+        {"vendor": ["a"], "subtotal": 12.5, "total": "null", "document_type": "passport", "x": 1}, "m"
     )
     assert res.fields["vendor"].value is None and "invalid_type" in res.fields["vendor"].warnings
     assert res.fields["subtotal"].value == "12.5"
     assert res.fields["total"].value is None and "not_found" in res.fields["total"].warnings
-    assert res.fields["document_type"].value is None
-    assert "company_reg" in res.extra_fields
+    assert res.fields["document_type"].value is None and "unsupported_value" in res.fields["document_type"].warnings
+    assert "missing_in_response" in res.fields["date"].warnings
+    assert res.extra_fields == {"x": "1"}
 
 
-def test_aliases_in_response():
-    rec = parse_vlm_output({"company": f("UNIHAKKA"), "total": f("$9.90")}, "m").record()
-    assert rec["vendor"] == "UNIHAKKA" and rec["total"] == "$9.90"
+def test_aliases():
+    assert parse_vlm_output({"company": "UNIHAKKA"}, "m").record()["vendor"] == "UNIHAKKA"
 
 
-@pytest.mark.parametrize("data", ["not json", None, [1, 2]])
-def test_invalid_output(data):
-    assert parse_vlm_output(data, "m").errors[0].code == "vlm_invalid_response"
+@pytest.mark.parametrize("text", ["no json here", "{broken", "[1, 2]"])
+def test_invalid_model_text(text):
+    res = extract_with_vlm(PNG_BYTES, engine=FakeEngine(text))
+    assert res.errors[0].code == "vlm_invalid_response"
 
 
-def test_no_parsed_output_and_refusal():
-    assert extract_with_vlm(PNG_BYTES, client=FakeClient(None)).errors[0].code == "vlm_invalid_response"
-    refused = FakeClient(VLMResponse.model_validate(VALID), stop_reason="refusal")
-    assert extract_with_vlm(PNG_BYTES, client=refused).errors[0].code == "vlm_refused"
+def test_extract_json_handles_fences():
+    assert extract_json('Here:\n```json\n{"a": 1}\n```') == {"a": 1}
 
 
-REQ = httpx.Request("POST", "https://api.anthropic.com/v1/messages")
+def test_generation_failure():
+    res = extract_with_vlm(PNG_BYTES, engine=FakeEngine(exc=RuntimeError("out of memory")))
+    assert res.errors[0].code == "vlm_failed" and all(v is None for v in res.record().values())
 
 
-@pytest.mark.parametrize(
-    ("exc", "code"),
-    [
-        (anthropic.APITimeoutError(request=REQ), "vlm_timeout"),
-        (anthropic.APIConnectionError(request=REQ), "vlm_api_error"),
-        (anthropic.InternalServerError("x", response=httpx.Response(500, request=REQ), body=None), "vlm_api_error"),
-    ],
-)
-def test_api_errors(exc, code):
-    res = extract_with_vlm(PNG_BYTES, client=FakeClient(exc=exc))
-    assert res.errors[0].code == code and all(v is None for v in res.record().values())
+def test_model_unavailable(monkeypatch):
+    def boom():
+        raise ImportError("no torch")
+
+    monkeypatch.setattr(ai, "get_engine", boom)
+    assert extract_with_vlm(PNG_BYTES).errors[0].code == "vlm_unavailable"
 
 
-def test_input_validation(tmp_path, monkeypatch):
-    assert extract_with_vlm(b"not an image", client=FakeClient()).errors[0].code == "invalid_input"
-    assert extract_with_vlm(tmp_path / "nope.png", client=FakeClient()).errors[0].code == "invalid_input"
-    big = PNG_BYTES + b"\x00" * (5 * 1024 * 1024)
-    assert extract_with_vlm(big, client=FakeClient()).errors[0].code == "invalid_input"
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    assert extract_with_vlm(PNG_BYTES).errors[0].code == "vlm_not_configured"
+def test_input_validation(tmp_path):
+    eng = FakeEngine("{}")
+    assert extract_with_vlm(b"not an image", engine=eng).errors[0].code == "invalid_input"
+    assert extract_with_vlm(tmp_path / "nope.png", engine=eng).errors[0].code == "invalid_input"
+    pdf = tmp_path / "a.pdf"
+    pdf.write_bytes(b"%PDF-1.7")
+    assert extract_with_vlm(pdf, engine=eng).errors[0].code == "invalid_input"
+    assert eng.calls == 0
+
+
+def test_caller_document_type():
+    res = extract_with_vlm(PNG_BYTES, engine=FakeEngine(json.dumps(VALID)), document_type="invoice")
+    assert res.fields["document_type"].value == "invoice"
+    assert res.fields["document_type"].confidence_method == "caller_provided"

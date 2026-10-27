@@ -5,7 +5,7 @@ from extraction.ai_extractor import parse_vlm_output
 from extraction.field_mapper import map_fields
 from extraction.schemas import CANONICAL_FIELDS
 
-from .conftest import lines
+from .conftest import PNG_BYTES, lines
 
 
 def test_both_branches_share_contract(receipt):
@@ -29,12 +29,16 @@ def test_metadata_not_in_record():
 
 
 def test_extract_both_independent(monkeypatch, tmp_path):
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    import extraction.ai_extractor as ai
     import extraction.ocr_engine as oe
 
-    monkeypatch.setattr(oe, "get_engine", lambda: (_ for _ in ()).throw(ImportError()))
+    def no_model():
+        raise ImportError()
+
+    monkeypatch.setattr(oe, "get_engine", no_model)
+    monkeypatch.setattr(ai, "get_engine", no_model)
     img = tmp_path / "x.png"
-    img.write_bytes(b"\x89PNG\r\n\x1a\n")
+    img.write_bytes(PNG_BYTES)
     out = extract_both(img)
     assert out["ocr"].errors[0].code == "ocr_unavailable"
-    assert out["vlm"].errors[0].code == "vlm_not_configured"
+    assert out["vlm"].errors[0].code == "vlm_unavailable"
