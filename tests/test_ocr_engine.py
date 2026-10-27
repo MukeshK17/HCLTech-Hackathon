@@ -53,10 +53,11 @@ def test_extract_with_ocr_errors(tmp_path):
     assert all(v is None for v in res.record().values())
 
 
-def test_run_ocr_numpy_passthrough():
-    sentinel = object()
+def test_run_ocr_numpy_input():
+    import numpy as np
+
     eng = FakeOCREngine(V3)
-    assert len(run_ocr(sentinel, engine=eng).lines) == 2
+    assert len(run_ocr(np.zeros((20, 20, 3), dtype=np.uint8), engine=eng).lines) == 2
 
 
 @pytest.mark.integration

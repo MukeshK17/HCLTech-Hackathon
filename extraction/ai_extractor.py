@@ -10,14 +10,12 @@ Heavy dependencies (torch, transformers) are optional: pip install -e ".[vlm]".
 
 from __future__ import annotations
 
-import io
 import json
 import logging
 import math
 import os
 import re
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any, Protocol
 
 from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
@@ -195,38 +193,23 @@ def parse_vlm_output(data: Any, model: str, output: VLMOutput | None = None) -> 
     return result
 
 
-def _open_image(image: Any) -> Any:
-    from PIL import Image
-
-    if isinstance(image, str | Path):
-        path = Path(image)
-        if not path.is_file():
-            raise FileNotFoundError(f"file not found: {path.name}")
-        if path.suffix.lower() == ".pdf":
-            raise ValueError("PDF not supported; Member 1 converts PDFs to images")
-        with Image.open(path) as img:
-            return img.convert("RGB")
-    if isinstance(image, bytes | bytearray):
-        with Image.open(io.BytesIO(image)) as img:
-            return img.convert("RGB")
-    if hasattr(image, "convert"):  # already a PIL image
-        return image.convert("RGB")
-    raise ValueError("unsupported image input")
-
-
 def extract_with_vlm(
-    image: str | Path | bytes | Any,
+    image: Any,
     *,
     engine: VLMEngine | None = None,
     document_type: str | None = None,
 ) -> ExtractionResult:
-    """Public VLM-branch entry point (local Qwen2-VL). Never raises for model problems;
-    see ``result.errors``."""
+    """Public VLM-branch entry point (local Qwen2-VL). Accepts the same inputs as OCR
+    (see extraction/inputs.py); for PDFs only the first page is read. Never raises for
+    model problems; see ``result.errors``."""
     model = (engine.name if engine else None) or os.getenv("VLM_MODEL") or DEFAULT_MODEL
+    from .inputs import load_document
+
     try:
-        img = _open_image(image)
+        doc = load_document(image)
     except (FileNotFoundError, ValueError, OSError) as exc:
         return failed_result("vlm", model, "invalid_input", str(exc))
+    img = doc.pages[0]
     try:
         engine = engine or get_engine()
     except ImportError:
@@ -243,6 +226,9 @@ def extract_with_vlm(
         return failed_result("vlm", model, "vlm_failed", type(exc).__name__)
 
     result = parse_vlm_output(extract_json(output.text), engine.name, output)
+    result.warnings = doc.warnings + result.warnings
+    if len(doc.pages) > 1:
+        result.warnings.append("vlm_first_page_only")
     if document_type and result.ok:
         result.fields["document_type"] = FieldResult(
             source="vlm", value=document_type, confidence=1.0, confidence_method="caller_provided"

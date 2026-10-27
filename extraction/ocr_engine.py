@@ -6,10 +6,9 @@ lazily, so the rest of the package and the test suite work without it.
 
 from __future__ import annotations
 
-import io
 import logging
 import os
-from pathlib import Path
+from pathlib import Path  # noqa: F401  (used in the ImageInput alias)
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -20,9 +19,9 @@ log = logging.getLogger(__name__)
 
 ENGINE_NAME = "paddleocr"
 
-# Input contract (from Member 1): a filesystem path, raw encoded image bytes
-# (PNG/JPEG), or a decoded HxWx3 numpy array. Nothing is written to disk.
-ImageInput = str | Path | bytes | Any
+# Input: Member 1's ocr_payload() dict, a path, file bytes (image or PDF), a PIL image
+# or an RGB numpy array. See extraction/inputs.py. Nothing is written to disk.
+ImageInput = dict[str, Any] | str | Path | bytes | Any
 
 
 class OCRLine(BaseModel):
@@ -135,28 +134,35 @@ def get_engine() -> Any:
     return _ENGINE
 
 
-def _prepare_image(image: ImageInput) -> Any:
-    if isinstance(image, str | Path):
-        path = Path(image)
-        if not path.is_file():
-            raise FileNotFoundError(f"image not found: {path.name}")
-        return str(path)
-    if isinstance(image, bytes | bytearray):
-        import numpy as np
-        from PIL import Image
+def run_ocr_pages(pages: list[Any], engine: Any = None) -> OCRResult:
+    """OCR each page image. Lines from later pages get their boxes shifted down by the
+    height of the pages above, so all boxes share one stacked coordinate system."""
+    import numpy as np
 
-        with Image.open(io.BytesIO(image)) as img:
-            return np.asarray(img.convert("RGB"))[:, :, ::-1].copy()  # RGB -> BGR in memory
-    return image  # assume numpy array
+    engine = engine or get_engine()
+    result = OCRResult()
+    y_offset = 0.0
+    for img in pages:
+        arr = np.asarray(img.convert("RGB"))[:, :, ::-1].copy()  # RGB -> BGR for PaddleOCR
+        raw = engine.predict(arr) if hasattr(engine, "predict") else engine.ocr(arr)
+        page = parse_paddle_output(raw)
+        for line in page.lines:
+            if line.bbox:
+                line.bbox = [line.bbox[0], line.bbox[1] + y_offset, line.bbox[2], line.bbox[3] + y_offset]
+        result.lines += page.lines
+        result.warnings += page.warnings
+        y_offset += img.height
+    if result.lines:
+        result.warnings = [w for w in result.warnings if w != "ocr_empty"]
+    result.warnings = list(dict.fromkeys(result.warnings))
+    log.info("ocr finished: %d pages, %d lines", len(pages), len(result.lines))  # counts only, never text
+    return result
 
 
 def run_ocr(image: ImageInput, engine: Any = None) -> OCRResult:
-    engine = engine or get_engine()
-    prepared = _prepare_image(image)
-    raw = engine.predict(prepared) if hasattr(engine, "predict") else engine.ocr(prepared)
-    result = parse_paddle_output(raw)
-    log.info("ocr finished: %d lines", len(result.lines))  # counts only, never text
-    return result
+    from .inputs import load_document
+
+    return run_ocr_pages(load_document(image).pages, engine=engine)
 
 
 def extract_with_ocr(
@@ -168,14 +174,19 @@ def extract_with_ocr(
     """Public OCR-branch entry point. Never raises for OCR failures; errors are
     reported in ``ExtractionResult.errors``."""
     from .field_mapper import map_fields
+    from .inputs import load_document
 
     try:
-        ocr = run_ocr(image, engine=engine)
+        doc = load_document(image)
+    except (FileNotFoundError, ValueError, OSError) as exc:
+        return failed_result("ocr", ENGINE_NAME, "invalid_input", str(exc))
+    try:
+        ocr = run_ocr_pages(doc.pages, engine=engine)
     except ImportError:
         return failed_result("ocr", ENGINE_NAME, "ocr_unavailable", "paddleocr is not installed")
-    except FileNotFoundError as exc:
-        return failed_result("ocr", ENGINE_NAME, "invalid_input", str(exc))
     except Exception as exc:  # engine errors vary by PaddleOCR version
         log.warning("ocr failed: %s", type(exc).__name__)
         return failed_result("ocr", ENGINE_NAME, "ocr_failed", type(exc).__name__)
-    return map_fields(ocr, document_type=document_type)
+    result = map_fields(ocr, document_type=document_type)
+    result.warnings = doc.warnings + result.warnings
+    return result

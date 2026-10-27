@@ -15,10 +15,9 @@ def test_bulk_folder_outputs_one_line_per_file(tmp_path, monkeypatch, capsys):
     )
     rc = cli.main([str(tmp_path), "--branch", "ocr"])
     rows = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
-    assert [r["file"].split("/")[-1] for r in rows] == ["a.png", "c.pdf", "b.jpg"]
-    assert rows[1]["ocr"]["errors"][0]["code"] == "invalid_input"  # PDF not sent to OCR
+    assert [r["file"].split("/")[-1] for r in rows] == ["a.png", "c.pdf", "b.jpg"]  # PDFs included
     assert "raw_text" not in rows[0]["ocr"]
-    assert rc == 1
+    assert rc == 0
 
 
 def test_single_file_pretty_json(tmp_path, monkeypatch, capsys):
