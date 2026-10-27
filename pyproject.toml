@@ -10,10 +10,13 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "pydantic>=2.7",
-    "pillow>=10.4",
     "numpy>=1.24",
+    "opencv-python-headless>=4.8",
+    "pandas>=2.0",
+    "pillow>=10.4",
     "pymupdf>=1.23",  # render PDF pages (Member 1 passes PDFs through unchanged)
     "python-dotenv>=1.0",
+    "streamlit>=1.50",
 ]
 
 [project.optional-dependencies]
@@ -33,7 +36,22 @@ dev = [
 ]
 
 [tool.setuptools.packages.find]
-include = ["extraction*"]
+include = ["extraction*", "rules_engine*"]
+
+[tool.setuptools]
+py-modules = [
+    "database",
+    "exporter",
+    "generate_sample_bills",
+    "app",
+    "pipeline",
+    "preprocess",
+    "review",
+    "review_demo",
+    "rules_integration",
+    "sample_data",
+    "validation",
+]
 
 [tool.ruff]
 line-length = 120
