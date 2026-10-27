@@ -22,3 +22,17 @@ def test_failed_branch_is_none_and_engine_accepts_it(receipt):
     doc = process_extraction(**kw).to_dict()
     assert doc["fields"]["date"]["normalized_value"] == "2018-03-30"
     assert doc["document_decision"]  # Member 3 decides; we only check it runs
+
+
+def test_ocr_confidence_passed_is_the_reading_score(receipt):
+    kw = to_rules_engine_inputs(map_fields(receipt), None)
+    assert kw["ocr_confidence"]["total_amount"] == 0.98  # PaddleOCR score, not the mapper's ranking score
+
+
+def test_review_hides_optional_fields_absent_everywhere(receipt):
+    from rules_integration import review_fields_from_rules
+
+    doc = process_extraction(**to_rules_engine_inputs(map_fields(receipt), None))
+    fields = review_fields_from_rules(doc)
+    assert "discount_amount" not in fields  # not printed, not required
+    assert {"vendor_name", "date", "total_amount"} <= set(fields)  # required ones always shown

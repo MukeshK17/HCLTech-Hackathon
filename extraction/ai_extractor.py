@@ -40,8 +40,11 @@ PROMPT = f"""Read this business document image. Return ONLY a JSON object with e
 {", ".join(CANONICAL_FIELDS)}.
 Rules:
 - document_type is one of: {", ".join(DOCUMENT_TYPES)} (or null if unclear).
-- vendor is the company that issued the document; address is the vendor's address.
-- date is the document date. total is the final amount paid.
+- vendor is the full company name that issued the document; address is the vendor's address.
+- date is the document date.
+- total is the final bill amount (TOTAL / GRAND TOTAL / AMOUNT DUE), NOT the cash given or change.
+- subtotal is the amount before tax; tax is the tax AMOUNT (e.g. 0.00), never the total.
+- invoice_number only if labelled invoice/bill/receipt number; company registration numbers are not invoices.
 - Copy every other value EXACTLY as printed (same date order, number format, currency symbol).
 - Use null for anything not printed on the document. Do not guess or calculate."""
 

@@ -41,6 +41,7 @@ CANONICAL_FIELDS = (
 class Evidence(BaseModel):
     text: str | None = None  # the line/text the value was read from
     bbox: list[float] | None = None  # [x_min, y_min, x_max, y_max] in pixels (OCR only)
+    ocr_score: float | None = None  # PaddleOCR reading confidence of the evidence line(s), 0-1
 
 
 class Candidate(BaseModel):

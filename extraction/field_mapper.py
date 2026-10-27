@@ -65,6 +65,7 @@ COMPANY_SUFFIX = _rx(
     r"\b(SDN\.?\s*BHD|BHD|LTD|LIMITED|LLC|INC|PLC|GMBH|PTE|CO\.|CORP\w*|ENTERPRISE|TRADING|RESTAURANT|STORE|MART|CAFE)\b"
 )
 VENDOR_SKIP = _rx(r"TAX\s*INVOICE|RECEIPT|INVOICE|\bTEL\b|PHONE|FAX|GST|\bREG\b|WELCOME|@|WWW|HTTP")
+SUFFIX_ONLY = _rx(r"\s*(SDN\.?\s*BHD\.?|BHD|S/B|LTD\.?|LIMITED|LLC|INC\.?|PLC|PTE\.?\s*LTD\.?|GMBH)\s*")
 ITEM_LINE = _rx(r"^\s*\d+\s*(X|PCS|RB\.?|@)?\s+[A-Z]")  # "1 RB. COKLAT BAR", "2 x COFFEE"
 ADDRESS_HINT = _rx(
     r"\b(JALAN|JLN|ROAD|RD|STREET|ST|TAMAN|LORONG|AVENUE|AVE|BLOCK|BLK|LOT|LEVEL|FLOOR|NO\.?\s*\d|\d{5,6})\b"
@@ -81,7 +82,8 @@ DOC_TYPE_KEYWORDS: dict[str, list[re.Pattern[str]]] = {
 
 def _ev(line: OCRLine, label: OCRLine | None = None) -> Evidence:
     text = line.text if label is None or label is line else f"{label.text} | {line.text}"
-    return Evidence(text=text, bbox=line.bbox)
+    score = line.confidence if label is None else min(line.confidence, label.confidence)
+    return Evidence(text=text, bbox=line.bbox, ocr_score=round(score, 4))
 
 
 def _same_row(a: OCRLine, b: OCRLine) -> bool:
@@ -197,6 +199,17 @@ def _vendor_address(lines: Sequence[OCRLine]) -> tuple[FieldResult, FieldResult]
         bonus = (0.3 if COMPANY_SUFFIX.search(line.text) else 0.0) + (0.1 if not cands else 0.0)
         score = min(line.confidence * (0.5 + bonus), 0.9)
         cands.append((i, Candidate(value=line.text, score=score, evidence=_ev(line))))
+    for k, (i, c) in enumerate(cands):
+        if SUFFIX_ONLY.fullmatch(c.value) and i > 0 and sum(ch.isalpha() for ch in lines[i - 1].text) >= 3:
+            prev = lines[i - 1]  # name continues from the line above
+            text = f"{prev.text} {c.value}"
+            score = min(c.score, prev.confidence * 0.8)
+            ev = Evidence(
+                text=text,
+                bbox=c.evidence.bbox if c.evidence else None,
+                ocr_score=round(min(prev.confidence, lines[i].confidence), 4),
+            )
+            cands[k] = (i, Candidate(value=text, score=score, evidence=ev))
     vendor = _choose([c for _, c in cands])
     address = FieldResult(source="ocr", warnings=["not_found"])
     if vendor.value is None:
@@ -221,7 +234,8 @@ def _vendor_address(lines: Sequence[OCRLine]) -> tuple[FieldResult, FieldResult]
             else None
         )
         score = min(p.confidence for p in parts) * 0.6
-        address = _choose([Candidate(value=text, score=score, evidence=Evidence(text=text, bbox=bbox))])
+        evidence = Evidence(text=text, bbox=bbox, ocr_score=round(min(p.confidence for p in parts), 4))
+        address = _choose([Candidate(value=text, score=score, evidence=evidence)])
     return vendor, address
 
 

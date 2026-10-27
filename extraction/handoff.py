@@ -37,8 +37,12 @@ def to_rules_engine_inputs(ocr: ExtractionResult | None, vlm: ExtractionResult |
     """Build the keyword arguments for ``rules_engine.process_extraction``."""
     ocr_conf = None
     if ocr is not None and ocr.ok:
+        # The rules engine weighs OCR *reading* confidence and does its own agreement check,
+        # so pass PaddleOCR's score for the evidence text (fallback: our heuristic score).
         ocr_conf = {
-            RULES_ENGINE_NAMES.get(name, name): f.confidence
+            RULES_ENGINE_NAMES.get(name, name): (
+                f.evidence.ocr_score if f.evidence and f.evidence.ocr_score is not None else f.confidence
+            )
             for name, f in ocr.fields.items()
             if f.value is not None and name != "document_type"
         }

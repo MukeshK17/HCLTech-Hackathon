@@ -113,3 +113,13 @@ def test_idr_receipt_without_decimals_due_label_and_item_lines():
 
 def test_due_date_is_not_a_total():
     assert map_fields(lines("DUE DATE 12,500")).record()["total"] is None
+
+
+def test_vendor_split_over_two_lines_is_joined():
+    rec = map_fields(lines("PASARAYA BORONG PINTAR", "SDN BHD", "BR No.: (124525-H)")).record()
+    assert rec["vendor"] == "PASARAYA BORONG PINTAR SDN BHD"
+
+
+def test_evidence_keeps_ocr_reading_score():
+    f = map_fields(lines(("TOTAL 9.90", 0.97))).fields["total"]
+    assert f.evidence.ocr_score == 0.97 and f.confidence < 0.97
