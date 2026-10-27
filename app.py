@@ -96,6 +96,12 @@ st.markdown(
     .decision.warn { border-color: #f59e0b; }
     .decision.bad  { border-color: #dc2626; }
     .legend span { display: inline-block; margin-right: 14px; font-size: 0.85rem; }
+    .doctype { padding: 14px 20px; border-radius: 14px; margin: 6px 0 4px 0;
+               background: linear-gradient(90deg, rgba(79,70,229,0.12), rgba(219,39,119,0.08));
+               border: 1px solid rgba(79,70,229,0.35); }
+    .doctype-main { font-size: 1.45rem; font-weight: 700; margin-right: 12px; }
+    .doctype-note { font-size: 0.9rem; opacity: 0.8; }
+    .doctype-detail { font-size: 0.85rem; opacity: 0.75; margin-top: 4px; }
     .stTabs [data-baseweb="tab-list"] { gap: 6px; }
     .stTabs [data-baseweb="tab"] { border-radius: 8px 8px 0 0; padding: 6px 14px; }
 
@@ -578,6 +584,39 @@ else:
     rules = run.rules.to_dict()
 
     # ---- Decision banner ---------------------------------------------------
+    # ---- Document type (classifier) -----------------------------------------
+    DOC_ICON = {"receipt": "🧾", "invoice": "📑", "delivery_note": "🚚", "form": "📝"}
+
+    def _type_of(branch):
+        if branch is None or not branch.ok:
+            return None, None
+        f = branch.fields["document_type"]
+        return f.value, (f.confidence if f.value else None)
+
+    ocr_t, ocr_tc = _type_of(run.ocr)
+    vlm_t, vlm_tc = _type_of(run.vlm)
+    final_t = vlm_t or ocr_t  # same precedence as the hand-off to the rules engine
+    if doc_type_override:
+        source_note = "set manually in the sidebar"
+    elif ocr_t and vlm_t:
+        source_note = "OCR and VLM agree" if ocr_t == vlm_t else f"VLM says {vlm_t}, OCR says {ocr_t}"
+    elif final_t:
+        source_note = "from " + ("VLM" if vlm_t else "OCR") + " only"
+    else:
+        source_note = "neither branch could tell"
+    parts = [
+        f"OCR: <b>{html.escape(ocr_t or '—')}</b>" + (f" ({ocr_tc:.2f})" if ocr_tc else ""),
+        f"VLM: <b>{html.escape(vlm_t or '—')}</b>" + (f" ({vlm_tc:.2f})" if vlm_tc else ""),
+        f"rules engine checks it as <b>{html.escape(str(rules.get('document_type', 'generic')))}</b>",
+    ]
+    st.markdown(
+        f'<div class="doctype"><span class="doctype-main">{DOC_ICON.get(final_t or "", "❓")} '
+        f"{html.escape((final_t or 'unknown type').replace('_', ' ').title())}</span>"
+        f'<span class="doctype-note">{html.escape(source_note)}</span>'
+        f'<div class="doctype-detail">{" · ".join(parts)}</div></div>',
+        unsafe_allow_html=True,
+    )
+
     css, title, blurb = DECISION_STYLE.get(run.decision, ("warn", run.decision, ""))
     reasons = "".join(f"<li>{html.escape(str(r))}</li>" for r in rules.get("decision_reasons", [])[:4])
     st.markdown(
